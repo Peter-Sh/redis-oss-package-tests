@@ -42,7 +42,7 @@ runs:
         echo "=== Test files uploaded successfully ==="
 
     - name: Run Redis package tests
-      shell: ${{ inputs.qemu_ssh }} {0}
+      shell: ${{ inputs.qemu_shell }} {0}
       run: |
         echo "=== Running Redis package tests ==="
 
