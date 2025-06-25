@@ -1,0 +1,74 @@
+name: "Redis Package Tests"
+description: "Run Redis package tests using shunit2 in a QEMU VM"
+
+inputs:
+  qemu_ssh:
+    description: "SSH command to connect to QEMU VM (e.g., 'ssh -i key -p 2222 user@host')"
+    required: true
+  qemu_shell:
+    description: "Shell command to execute scripts in QEMU VM (e.g., 'qemu_shell')"
+    required: true
+  redis_rpm_files:
+    description: "Space-separated list of Redis RPM files to install"
+    required: false
+    default: ""
+  test_timeout:
+    description: "Timeout for test execution in seconds"
+    required: false
+    default: "300"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Upload test files to VM
+      shell: bash
+      run: |
+        echo "=== Uploading test files to QEMU VM ==="
+
+        # Create tests directory in VM
+        ${{ inputs.qemu_ssh }} "mkdir -p /tmp/redis-tests"
+
+        # Upload the test script
+        echo "Uploading package_tests.sh..."
+        scp $QEMU_SCP_ARGS ${{ github.action_path }}/package_tests.sh $QEMU_SSH_HOST:/tmp/redis-tests/
+
+        # Upload shunit2 framework
+        echo "Uploading shunit2..."
+        scp $QEMU_SCP_ARGS ${{ github.action_path }}/shunit2 $QEMU_SSH_HOST:/tmp/redis-tests/
+
+        # Make test script executable
+        ${{ inputs.qemu_ssh }} "chmod +x /tmp/redis-tests/package_tests.sh"
+
+        echo "=== Test files uploaded successfully ==="
+
+    - name: Run Redis package tests
+      shell: ${{ inputs.qemu_ssh }} {0}
+      run: |
+        echo "=== Running Redis package tests ==="
+
+        cd /tmp/redis-tests
+
+        # Set environment variable for RPM files if provided
+        if [ -n "${{ inputs.redis_rpm_files }}" ]; then
+          export REDIS_RPM_INSTALL_FILES="${{ inputs.redis_rpm_files }}"
+          echo "REDIS_RPM_INSTALL_FILES set to: ${{ inputs.redis_rpm_files }}"
+        else
+          echo "No Redis RPM files specified"
+        fi
+
+        # Run the tests with timeout
+        echo "Starting Redis package tests..."
+        timeout ${{ inputs.test_timeout }} ./package_tests.sh
+
+        echo "Redis package tests completed successfully"
+
+    - name: Cleanup test files
+      if: always()
+      shell: bash
+      run: |
+        echo "=== Cleaning up test files ==="
+
+        # Remove test files from VM
+        ${{ inputs.qemu_ssh }} "rm -rf /tmp/redis-tests" || echo "Failed to cleanup test files"
+
+        echo "=== Cleanup completed ==="
