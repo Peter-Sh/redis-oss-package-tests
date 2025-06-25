@@ -1,0 +1,276 @@
+name: "Run QEMU VM (Rootless)"
+description: "Start a QEMU VM with cloud-init and SSH access using userspace networking"
+
+inputs:
+  image:
+    description: "Path to the qcow2 image file"
+    required: true
+  arch:
+    description: "QEMU emulator architecture (e.g., x86-64, aarch64, amd64)"
+    required: true
+  memory:
+    description: "Memory available to the guest"
+    default: "4G"
+  qemu_args:
+    description: "Additional QEMU arguments"
+    required: false
+    default: ""
+  ssh_port:
+    description: "Host port to forward SSH to (guest port 22)"
+    required: false
+    default: "2222"
+  timeout:
+    description: "Timeout for waiting for SSH"
+    required: false
+    default: "300"
+  snapshot_size:
+    description: "Size for the snapshot image (e.g., 10G, 20G). If not provided, will try to detect from base image"
+    required: false
+    default: ""
+  create_snapshot:
+    description: "Whether to create a snapshot of the base image"
+    required: false
+    default: "true"
+  extra_space:
+    description: "Extra space in GB to add to detected image size for snapshot"
+    required: false
+    default: "1"
+  qemu_cpu:
+    description: "QEMU CPU model"
+    required: false
+    default: ""
+  qemu_bios:
+    description: "QEMU BIOS file"
+    required: false
+    default: ""
+  qemu_machine:
+    description: "QEMU Machine type"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Map architecture to package name
+      shell: bash
+      run: |
+
+        QEMU_ARCH=${{ inputs.arch }}
+        case "$QEMU_ARCH" in
+          amd64)
+            QEMU_ARCH="x86_64"
+            ;;
+          arm64)
+            QEMU_ARCH="aarch64"
+            ;;
+        esac
+
+        echo "QEMU_ARCH=$QEMU_ARCH" >> $GITHUB_ENV
+        QEMU_SYSTEM_NAME="qemu-system-$QEMU_ARCH"
+
+        QEMU_CPU="-cpu ${{ inputs.qemu_cpu != '' && inputs.qemu_cpu || 'max' }}"
+        QEMU_BIOS="${{ inputs.qemu_bios  != '' && format('-bios {0}', inputs.qemu_bios) || '' }}"
+        QEMU_MACHINE="${{ inputs.qemu_machine != '' && format('-machine {0}', inputs.qemu_machine) || '' }}"
+
+        # Map QEMU system name to actual package name
+        case "$QEMU_SYSTEM_NAME" in
+          qemu-system-aarch64|qemu-system-arm|qemu-system-arm64|qemu-system-armel|qemu-system-armhf)
+            QEMU_SYSTEM_PACKAGE="qemu-system-arm"
+            QEMU_BIOS="-bios /usr/share/AAVMF/AAVMF_CODE.fd"
+            QEMU_CPU="-cpu ${{ inputs.qemu_cpu != '' && inputs.qemu_cpu || 'cortex-a57' }}"
+            QEMU_MACHINE="-machine virt"
+            ;;
+          qemu-system-mips|qemu-system-mips64|qemu-system-mips64el|qemu-system-mipsel)
+            QEMU_SYSTEM_PACKAGE="qemu-system-mips"
+            ;;
+          qemu-system-alpha|qemu-system-avr|qemu-system-cris|qemu-system-hppa|qemu-system-loong64|qemu-system-loongarch64|qemu-system-m68k|qemu-system-microblaze|qemu-system-microblazeel|qemu-system-nios2|qemu-system-or1k|qemu-system-riscv32|qemu-system-riscv64|qemu-system-rx|qemu-system-sh4|qemu-system-sh4eb|qemu-system-tricore|qemu-system-xtensa|qemu-system-xtensaeb)
+            QEMU_SYSTEM_PACKAGE="qemu-system-misc"
+            ;;
+          qemu-system-powerpc|qemu-system-ppc|qemu-system-ppc64|qemu-system-ppc64el|qemu-system-ppc64le)
+            QEMU_SYSTEM_PACKAGE="qemu-system-ppc"
+            ;;
+          qemu-system-s390x)
+            QEMU_SYSTEM_PACKAGE="qemu-system-s390x"
+            ;;
+          qemu-system-sparc|qemu-system-sparc64)
+            QEMU_SYSTEM_PACKAGE="qemu-system-sparc"
+            ;;
+          qemu-system-amd64|qemu-system-i386|qemu-system-x86|qemu-system-x86_64)
+            QEMU_SYSTEM_PACKAGE="qemu-system-x86"
+            ;;
+          *)
+            echo "Error: Cannot detect package name for $QEMU_SYSTEM_NAME"
+            exit 1
+            ;;
+        esac
+
+        echo "QEMU system name: $QEMU_SYSTEM_NAME"
+        echo "QEMU package name: $QEMU_SYSTEM_PACKAGE"
+        echo "QEMU_SYSTEM_NAME=$QEMU_SYSTEM_NAME" >> $GITHUB_ENV
+        echo "QEMU_SYSTEM_PACKAGE=$QEMU_SYSTEM_PACKAGE" >> $GITHUB_ENV
+        echo "QEMU_CPU=$QEMU_CPU" >> $GITHUB_ENV
+        echo "QEMU_BIOS=$QEMU_BIOS" >> $GITHUB_ENV
+        echo "QEMU_MACHINE=$QEMU_MACHINE" >> $GITHUB_ENV
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        # Check if QEMU binary is already available
+        if command -v $QEMU_SYSTEM_NAME >/dev/null 2>&1; then
+          echo "$QEMU_SYSTEM_NAME is already installed"
+        else
+          echo "Installing $QEMU_SYSTEM_PACKAGE (provides $QEMU_SYSTEM_NAME)"
+          sudo apt update
+          sudo apt install -y $QEMU_SYSTEM_PACKAGE
+        fi
+        if ! command -v $QEMU_SYSTEM_NAME >/dev/null 2>&1; then
+          echo "Error: $QEMU_SYSTEM_NAME is not available after installation of $QEMU_SYSTEM_PACKAGE"
+          exit 1
+        fi
+
+        # Check if genisoimage is already available
+        if command -v genisoimage >/dev/null 2>&1; then
+          echo "genisoimage is already installed"
+        else
+          echo "Installing genisoimage"
+          sudo apt install -y genisoimage
+        fi
+
+    - name: Generate SSH key and password
+      shell: bash
+      run: |
+        PASSWD=$(openssl rand -base64 12)
+        echo "Generated password: $PASSWD"
+        echo "QEMU_PASSWD=$PASSWD" >> $GITHUB_ENV
+        ssh-keygen -t ecdsa -f /home/ubuntu/qemu_ssh_key -N ""
+        cat /home/ubuntu/qemu_ssh_key.pub >> /home/ubuntu/.ssh/authorized_keys
+        common_ssh_args="-i /home/ubuntu/qemu_ssh_key -o StrictHostKeyChecking=no"
+        QEMU_SSH_ARGS="$common_ssh_args -p ${{ inputs.ssh_port }}"
+        QEMU_SCP_ARGS="$common_ssh_args -P ${{ inputs.ssh_port }}"
+        QEMU_SSH_HOST="qemu@127.0.0.1"
+        echo "QEMU_SSH_ARGS=$QEMU_SSH_ARGS" >> $GITHUB_ENV
+        echo "QEMU_SCP_ARGS=$QEMU_SCP_ARGS" >> $GITHUB_ENV
+        echo "QEMU_SSH_HOST=$QEMU_SSH_HOST" >> $GITHUB_ENV
+        echo "QEMU_SSH=ssh $QEMU_SSH_ARGS $QEMU_SSH_HOST" >> $GITHUB_ENV
+        cat <<EOF | sudo tee /usr/bin/qemu_shell
+        #!/bin/bash
+        cat \$1 | ssh $QEMU_SSH_ARGS $QEMU_SSH_HOST bash -e
+        EOF
+        sudo chmod +x /usr/bin/qemu_shell
+
+    - name: Create cloud-init config
+      shell: bash
+      run: |
+        mkdir -p cloud-init
+        cat <<EOF > cloud-init/user-data
+        #cloud-config
+        users:
+          - name: qemu
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            shell: /bin/bash
+            lock_passwd: false
+            passwd: $(openssl passwd -6 "$QEMU_PASSWD")
+            ssh_authorized_keys:
+              - $(cat /home/ubuntu/qemu_ssh_key.pub)
+        EOF
+
+        cat <<EOF > cloud-init/network-config
+        #network-config
+        network:
+          version: 2
+          ethernets:
+            ens3:
+              dhcp4: true
+        EOF
+
+        cat cloud-init/user-data
+        cat cloud-init/network-config
+        echo "instance-id: qemu-001" > cloud-init/meta-data
+        echo "local-hostname: qemu-vm" >> cloud-init/meta-data
+        genisoimage -output cloud-init.iso -volid cidata -joliet -rock cloud-init
+
+    - name: Create snapshot image
+      shell: bash
+      run: |
+        if [ "${{ inputs.create_snapshot }}" = "true" ]; then
+          # Check if qemu-img is available
+          if ! command -v qemu-img >/dev/null 2>&1; then
+            echo "Error: qemu-img is not available but is required for snapshot creation"
+            exit 1
+          fi
+
+          BASE_IMAGE="${{ inputs.image }}"
+          SNAPSHOT_IMAGE="${BASE_IMAGE}.snapshot"
+
+          # Determine snapshot size
+          if [ -n "${{ inputs.snapshot_size }}" ]; then
+            SNAPSHOT_SIZE="${{ inputs.snapshot_size }}"
+            echo "Using provided snapshot size: $SNAPSHOT_SIZE"
+          else
+            # Try to detect size from base image
+            echo "Detecting size from base image..."
+            # Get virtual size from qemu-img info
+            DETECTED_SIZE=$(qemu-img info "$BASE_IMAGE" | grep "virtual size" | sed -n 's/.*(\([0-9]*\) bytes).*/\1/p')
+            if [ -n "$DETECTED_SIZE" ] && [ "$DETECTED_SIZE" -gt 0 ]; then
+              # Convert bytes to GB and add configurable extra space
+              EXTRA_SPACE=${{ inputs.extra_space }}
+              SIZE_GB=$(( (DETECTED_SIZE / 1024 / 1024 / 1024) + EXTRA_SPACE ))
+              SNAPSHOT_SIZE="${SIZE_GB}G"
+              echo "Detected base image size, adding ${EXTRA_SPACE}GB extra space, using ${SNAPSHOT_SIZE} for snapshot"
+            else
+              SNAPSHOT_SIZE="10G"
+              echo "Could not detect image size, using default: $SNAPSHOT_SIZE"
+            fi
+          fi
+
+          echo "Creating snapshot: $SNAPSHOT_IMAGE"
+          echo "Base image: $BASE_IMAGE"
+          echo "Snapshot size: $SNAPSHOT_SIZE"
+
+          qemu-img create -f qcow2 -b "$BASE_IMAGE" -F qcow2 "$SNAPSHOT_IMAGE" "$SNAPSHOT_SIZE"
+
+          # Store snapshot path for use in subsequent steps
+          echo "QEMU_IMAGE_SNAPSHOT=$SNAPSHOT_IMAGE" >> $GITHUB_ENV
+        else
+          echo "Snapshot creation disabled, using base image directly"
+          echo "QEMU_IMAGE_SNAPSHOT=${{ inputs.image }}" >> $GITHUB_ENV
+        fi
+
+    - name: Start QEMU
+      shell: bash
+      run: |
+        $QEMU_SYSTEM_NAME \
+          -m ${{ inputs.memory }} \
+          $QEMU_CPU \
+          $QEMU_BIOS \
+          $QEMU_MACHINE \
+          -drive file=$QEMU_IMAGE_SNAPSHOT,format=qcow2 \
+          -cdrom cloud-init.iso \
+          -nic user,hostfwd=tcp:127.0.0.1:${{ inputs.ssh_port }}-:22,model=virtio-net-pci \
+          -nographic \
+          ${{ inputs.qemu_args }} > qemu.log 2>&1 &
+        echo "QEMU_PID=$!" >> $GITHUB_ENV
+
+    - name: Wait for SSH
+      shell: bash
+      run: |
+        TIMEOUT_SECONDS=${{ inputs.timeout }}
+        START_TIME=$(date +%s)
+        END_TIME=$((START_TIME + TIMEOUT_SECONDS))
+
+        echo "Waiting for SSH connection (timeout: ${TIMEOUT_SECONDS}s)..."
+
+        while [ $(date +%s) -lt $END_TIME ]; do
+          if $QEMU_SSH -o ConnectTimeout=5 "echo 2>&1"; then
+            ELAPSED=$(($(date +%s) - START_TIME))
+            echo "Guest is ready! (took ${ELAPSED}s)"
+            exit 0
+          fi
+          sleep 5
+        done
+
+        ELAPSED=$(($(date +%s) - START_TIME))
+        echo "Guest did not start in time (waited ${ELAPSED}s). Showing logs:"
+        cat qemu.log
+        kill $QEMU_PID
+        exit 1
