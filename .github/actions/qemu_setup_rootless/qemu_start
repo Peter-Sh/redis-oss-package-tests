@@ -1,0 +1,15 @@
+#!/bin/bash
+# Start QEMU with the configured parameters
+# Uses environment variables: QEMU_MEMORY, QEMU_SSH_PORT, QEMU_ARGS
+
+$QEMU_SYSTEM_NAME \
+  -m "$QEMU_MEMORY" \
+  $QEMU_CPU \
+  $QEMU_BIOS \
+  $QEMU_MACHINE \
+  -drive file=$QEMU_IMAGE_SNAPSHOT,format=qcow2 \
+  -cdrom cloud-init.iso \
+  -nic user,hostfwd=tcp:127.0.0.1:"$QEMU_SSH_PORT"-:22,model=virtio-net-pci \
+  -nographic \
+  $QEMU_ARGS > qemu.log 2>&1 &
+echo "QEMU_PID=$!" >> $GITHUB_ENV

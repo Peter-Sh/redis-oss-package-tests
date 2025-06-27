@@ -107,9 +107,13 @@ runs:
         echo "QEMU package name: $QEMU_SYSTEM_PACKAGE"
         echo "QEMU_SYSTEM_NAME=$QEMU_SYSTEM_NAME" >> $GITHUB_ENV
         echo "QEMU_SYSTEM_PACKAGE=$QEMU_SYSTEM_PACKAGE" >> $GITHUB_ENV
+
         echo "QEMU_CPU=$QEMU_CPU" >> $GITHUB_ENV
         echo "QEMU_BIOS=$QEMU_BIOS" >> $GITHUB_ENV
         echo "QEMU_MACHINE=$QEMU_MACHINE" >> $GITHUB_ENV
+        echo "QEMU_MEMORY=${{ inputs.memory }}" >> $GITHUB_ENV
+        echo "QEMU_SSH_PORT=${{ inputs.ssh_port }}" >> $GITHUB_ENV
+        echo "QEMU_ARGS=${{ inputs.qemu_args }}" >> $GITHUB_ENV
 
     - name: Install dependencies
       shell: bash
@@ -151,42 +155,8 @@ runs:
         echo "QEMU_SCP_ARGS=$QEMU_SCP_ARGS" >> $GITHUB_ENV
         echo "QEMU_SSH_HOST=$QEMU_SSH_HOST" >> $GITHUB_ENV
         echo "QEMU_SSH=ssh $QEMU_SSH_ARGS $QEMU_SSH_HOST" >> $GITHUB_ENV
-        cat <<EOF | sudo tee /usr/bin/qemu_shell
-        #!/bin/bash
-        cat \$1 | ssh $QEMU_SSH_ARGS $QEMU_SSH_HOST bash -e
-        EOF
-        sudo chmod +x /usr/bin/qemu_shell
-
-        cat <<EOF | sudo tee /usr/bin/qemu_wait
-        #!/bin/bash
-        # Usage: qemu_wait <timeout_seconds>
-
-        if [ -z "\$QEMU_PID" ]; then
-          echo "QEMU_PID environment variable is not set" >&2
-          exit 1
-        fi
-
-        TIMEOUT=\$1
-        COUNTER=0
-
-        if [ -z "\$TIMEOUT" ]; then
-          echo "Timeout is not set" >&2
-          exit 1
-        fi
-
-        while [ \$COUNTER -lt \$TIMEOUT ]; do
-            [ ! -d "/proc/\$QEMU_PID" ] && exit 0
-            [ -f "/proc/\$QEMU_PID/cmdline" ] && ! grep -q "qemu" "/proc/\$QEMU_PID/cmdline" 2>/dev/null && exit 0
-            [ ! -f "/proc/\$QEMU_PID/cmdline" ] && exit 0
-
-            COUNTER=\$((COUNTER + 1))
-            sleep 1
-        done
-
-        echo "Timed out after $TIMEOUT seconds waiting for QEMU process $QEMU_PID" >&2
-        exit 1
-        EOF
-        sudo chmod +x /usr/bin/qemu_wait
+        echo "QEMU_SHELL=${{ github.action_path }}/qemu_shell" >> $GITHUB_ENV
+        echo "QEMU_RESTART=${{ github.action_path }}/qemu_restart" >> $GITHUB_ENV
 
     - name: Create cloud-init config
       shell: bash
@@ -269,17 +239,7 @@ runs:
     - name: Start QEMU
       shell: bash
       run: |
-        $QEMU_SYSTEM_NAME \
-          -m ${{ inputs.memory }} \
-          $QEMU_CPU \
-          $QEMU_BIOS \
-          $QEMU_MACHINE \
-          -drive file=$QEMU_IMAGE_SNAPSHOT,format=qcow2 \
-          -cdrom cloud-init.iso \
-          -nic user,hostfwd=tcp:127.0.0.1:${{ inputs.ssh_port }}-:22,model=virtio-net-pci \
-          -nographic \
-          ${{ inputs.qemu_args }} > qemu.log 2>&1 &
-        echo "QEMU_PID=$!" >> $GITHUB_ENV
+        ${{ github.action_path }}/qemu_start
 
     - name: Wait for SSH
       shell: bash
