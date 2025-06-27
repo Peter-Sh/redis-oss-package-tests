@@ -196,6 +196,9 @@ test_redis_rpm_install_files() {
     helper_install_redis
     ret=$?
     assertTrue "Failed to install Redis packages" $?
+
+    execute_command getenforce
+    console_output 1 gray "$last_cmd_stdout"
 }
 
 # Test function to check if Redis server starts successfully via systemd
