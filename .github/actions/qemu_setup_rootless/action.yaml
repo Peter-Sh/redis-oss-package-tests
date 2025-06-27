@@ -54,7 +54,6 @@ runs:
     - name: Map architecture to package name
       shell: bash
       run: |
-
         QEMU_ARCH=${{ inputs.arch }}
         case "$QEMU_ARCH" in
           amd64)
@@ -157,6 +156,37 @@ runs:
         cat \$1 | ssh $QEMU_SSH_ARGS $QEMU_SSH_HOST bash -e
         EOF
         sudo chmod +x /usr/bin/qemu_shell
+
+        cat <<EOF | sudo tee /usr/bin/qemu_wait
+        #!/bin/bash
+        # Usage: qemu_wait <timeout_seconds>
+
+        if [ -z "\$QEMU_PID" ]; then
+          echo "QEMU_PID environment variable is not set" >&2
+          exit 1
+        fi
+
+        TIMEOUT=\$1
+        COUNTER=0
+
+        if [ -z "\$TIMEOUT" ]; then
+          echo "Timeout is not set" >&2
+          exit 1
+        fi
+
+        while [ \$COUNTER -lt \$TIMEOUT ]; do
+            [ ! -d "/proc/\$QEMU_PID" ] && exit 0
+            [ -f "/proc/\$QEMU_PID/cmdline" ] && ! grep -q "qemu" "/proc/\$QEMU_PID/cmdline" 2>/dev/null && exit 0
+            [ ! -f "/proc/\$QEMU_PID/cmdline" ] && exit 0
+
+            COUNTER=\$((COUNTER + 1))
+            sleep 1
+        done
+
+        echo "Timed out after $TIMEOUT seconds waiting for QEMU process $QEMU_PID" >&2
+        exit 1
+        EOF
+        sudo chmod +x /usr/bin/qemu_wait
 
     - name: Create cloud-init config
       shell: bash
