@@ -1,0 +1,30 @@
+#!/bin/bash
+# Wait for SSH connection to QEMU guest
+# Usage: qemu_wait_for_ssh <timeout_seconds>
+# Uses environment variables: QEMU_SSH, QEMU_PID
+
+if [ $# -ne 1 ]; then
+    echo "Usage: qemu_wait_for_ssh <timeout_seconds>" >&2
+    exit 1
+fi
+
+TIMEOUT_SECONDS=$1
+START_TIME=$(date +%s)
+END_TIME=$((START_TIME + TIMEOUT_SECONDS))
+
+echo "Waiting for SSH connection (timeout: ${TIMEOUT_SECONDS}s)..."
+
+while [ $(date +%s) -lt $END_TIME ]; do
+  if $QEMU_SSH -o ConnectTimeout=5 "echo 2>&1"; then
+    ELAPSED=$(($(date +%s) - START_TIME))
+    echo "Guest is ready! (took ${ELAPSED}s)"
+    exit 0
+  fi
+  sleep 5
+done
+
+ELAPSED=$(($(date +%s) - START_TIME))
+echo "Guest did not start in time (waited ${ELAPSED}s). Showing logs:"
+cat qemu.log
+kill $QEMU_PID
+exit 1

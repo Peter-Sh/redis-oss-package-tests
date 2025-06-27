@@ -1,6 +1,7 @@
 #!/bin/bash
 # Start QEMU with the configured parameters
-# Uses environment variables: QEMU_MEMORY, QEMU_SSH_PORT, QEMU_ARGS
+
+echo "Starting QEMU..."
 
 $QEMU_SYSTEM_NAME \
   -m "$QEMU_MEMORY" \
@@ -13,3 +14,5 @@ $QEMU_SYSTEM_NAME \
   -nographic \
   $QEMU_ARGS > qemu.log 2>&1 &
 echo "QEMU_PID=$!" >> $GITHUB_ENV
+
+echo "Started QEMU, PID: $QEMU_PID"

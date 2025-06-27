@@ -1,18 +1,29 @@
 #!/bin/bash
-# Restart QEMU by waiting for current process to stop, then starting a new one
-# Usage: qemu_restart <timeout_seconds>
-# Uses environment variables: QEMU_MEMORY, QEMU_SSH_PORT, QEMU_ARGS
-
-if [ $# -ne 1 ]; then
-    echo "Usage: qemu_restart <timeout_seconds>" >&2
+if [ $# -ne 2 ]; then
+    echo "Usage: qemu_restart <stop_timeout_seconds> <start_timeout_seconds>" >&2
     exit 1
 fi
 
 SCRIPT_DIR="$(dirname "$0")"
-TIMEOUT=$1
+STOP_TIMEOUT=$1
+START_TIMEOUT=$2
+
+echo "Restarting QEMU, PID: $QEMU_PID (stop timeout: ${STOP_TIMEOUT}s, start timeout: ${START_TIMEOUT}s)..."
+
+# Send SIGTERM to QEMU process
+kill -s SIGTERM $QEMU_PID
 
 # Wait for current QEMU process to stop
-"$SCRIPT_DIR/qemu_wait" "$TIMEOUT"
-
-# Start QEMU regardless of wait result
-"$SCRIPT_DIR/qemu_start"
+if "$SCRIPT_DIR/qemu_wait_for_exit" "$STOP_TIMEOUT"; then
+    echo "QEMU stopped, starting new instance..."
+    "$SCRIPT_DIR/qemu_start"
+    if "$SCRIPT_DIR/qemu_wait_for_ssh" "$START_TIMEOUT"; then
+        echo "QEMU restarted"
+    else
+        echo "QEMU did not start in time"
+        exit 1
+    fi
+else
+    echo "QEMU did not stop in time"
+    exit 1
+fi

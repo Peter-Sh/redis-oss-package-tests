@@ -157,24 +157,27 @@ require_has_systemd() {
 }
 
 helper_install_redis() {
+    ret=1
     if [ -n "$REDIS_RPM_INSTALL_FILES" ]; then
         helper_install_redis_from_rpm_files
-        return $?
+        ret=$?
+    else
+        console_output 1 red "Didn't find a way to install Redis"
     fi
-    echo "Didn't find a way to install Redis" >&2
-    return 1
+
+    return $ret
 }
 
 helper_install_redis_from_rpm_files() {
     if [ -n "$REDIS_INSTALLED" ]; then
         #shellcheck disable=SC2181
-        echo "Found result: $REDIS_INSTALLED from previous installation attempt, not installing" >&2
+        if [ "$REDIS_INSTALLED" -ne 0 ]; then
+            console_output 1 red "Redis installation failed previously, not attempting to install again" >&2
+        fi
         # shellcheck disable=SC2086
         return $REDIS_INSTALLED
     fi
     execute_command sudo yum install -y $REDIS_RPM_INSTALL_FILES
-    echo "$last_cmd_stdout"
-    echo "$last_cmd_stderr" >&2
     REDIS_INSTALLED=$last_cmd_result
     return $last_cmd_result
 }
@@ -190,15 +193,14 @@ test_redis_rpm_install_files() {
         return
     fi
 
-    execute_command helper_install_redis
-
-    assertTrue "Failed to install Redis packages" "$last_cmd_result"
+    helper_install_redis
+    ret=$?
+    assertTrue "Failed to install Redis packages" $?
 }
 
 # Test function to check if Redis server starts successfully via systemd
 test_systemd_start_redis() {
-    execute_command helper_install_redis
-    if [ "$last_cmd_result" -ne 0 ]; then
+    if ! helper_install_redis; then
         return 1
     fi
 

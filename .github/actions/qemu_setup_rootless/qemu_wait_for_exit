@@ -1,10 +1,18 @@
 #!/bin/bash
 # Usage: qemu_wait <timeout_seconds>
 
-[ $# -ne 1 ] && exit 1
-[ -z "$QEMU_PID" ] && exit 1
+if [ -z "$QEMU_PID" ]; then
+    echo "QEMU_PID is not set" >&2
+    exit 1
+fi
 
 TIMEOUT=$1
+
+if [ -z "$TIMEOUT" ]; then
+    echo "Timeout is not set" >&2
+    exit 1
+fi
+
 COUNTER=0
 
 while [ $COUNTER -lt $TIMEOUT ]; do
