@@ -13,6 +13,8 @@ $QEMU_SYSTEM_NAME \
   -nic user,hostfwd=tcp:127.0.0.1:"$QEMU_SSH_PORT"-:22,model=virtio-net-pci \
   -nographic \
   $QEMU_ARGS > qemu.log 2>&1 &
-echo "QEMU_PID=$!" >> $GITHUB_ENV
+
+QEMU_PID=$!
+echo "QEMU_PID=$QEMU_PID" >> $GITHUB_ENV
 
 echo "Started QEMU, PID: $QEMU_PID"

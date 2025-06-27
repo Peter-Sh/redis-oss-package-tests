@@ -244,4 +244,4 @@ runs:
     - name: Wait for SSH
       shell: bash
       run: |
-        $QEMU_WAIT_FOR_SSH ${{ inputs.timeout }}
+        ${{ github.action_path }}/qemu_wait_for_ssh ${{ inputs.timeout }}
