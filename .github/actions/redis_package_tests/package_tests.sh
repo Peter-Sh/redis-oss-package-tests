@@ -6,7 +6,11 @@
 # Global variables for test control
 should_skip=false
 skip_reasons=()
-VERBOSITY=1
+REDIS_INSTALLED=
+
+if [ -z "$VERBOSITY" ]; then
+    VERBOSITY=1
+fi
 
 # Global variables for command execution
 last_cmd_stdout=""
@@ -123,6 +127,7 @@ require_id_like() {
 
     if [ -f /etc/os-release ]; then
         # Source the os-release file to get ID_LIKE and ID
+        # shellcheck disable=SC1091
         . /etc/os-release
 
         # Check both ID and ID_LIKE
@@ -151,14 +156,31 @@ require_has_systemd() {
     fi
 }
 
+helper_install_redis() {
+    if [ -n "$REDIS_RPM_INSTALL_FILES" ]; then
+        helper_install_redis_from_rpm_files
+        return $?
+    fi
+    echo "Didn't find a way to install Redis" >&2
+    return 1
+}
+
+helper_install_redis_from_rpm_files() {
+    if [ -n "$REDIS_INSTALLED" ]; then
+        #shellcheck disable=SC2181
+        echo "Found result: $REDIS_INSTALLED from previous installation attempt, not installing" >&2
+        # shellcheck disable=SC2086
+        return $REDIS_INSTALLED
+    fi
+    execute_command sudo yum install -y $REDIS_RPM_INSTALL_FILES
+    echo "$last_cmd_stdout"
+    echo "$last_cmd_stderr" >&2
+    REDIS_INSTALLED=$last_cmd_result
+    return $last_cmd_result
+}
+
 # Test function to check Redis RPM installation requirements
 test_redis_rpm_install_files() {
-    # Check if REDIS_RPM_INSTALL_FILES is set and not empty
-    if [ -z "$REDIS_RPM_INSTALL_FILES" ]; then
-        should_skip=true
-        skip_reasons+=("REDIS_RPM_INSTALL_FILES is not set or empty")
-    fi
-
     # Check if OS is RedHat-like
     require_id_like "rhel"
 
@@ -168,17 +190,17 @@ test_redis_rpm_install_files() {
         return
     fi
 
-    execute_command sudo yum install -y $REDIS_RPM_INSTALL_FILES
-    ret=$?
+    execute_command helper_install_redis
 
-    assertTrue "Failed to install Redis packages: $REDIS_RPM_INSTALL_FILES" "$ret"
-    if [ "$ret" -ne 0 ]; then
-        console_output 0 red "$yum_output"
-    fi
+    assertTrue "Failed to install Redis packages" "$last_cmd_result"
 }
 
 # Test function to check if Redis server starts successfully via systemd
 test_systemd_start_redis() {
+    execute_command helper_install_redis
+    if [ "$last_cmd_result" -ne 0 ]; then
+        return 1
+    fi
 
     # Check requirements
     require_has_systemd
@@ -235,4 +257,5 @@ test_systemd_start_redis() {
 
 # Load shunit2 framework
 # This should be the last line in the script
+# shellcheck disable=SC1091
 . "$(dirname "$0")/shunit2"
