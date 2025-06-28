@@ -1,6 +1,25 @@
 #!/bin/bash
+
+# Parse options
+NO_KILL=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-kill)
+            NO_KILL=true
+            shift
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 if [ $# -ne 2 ]; then
-    echo "Usage: qemu_restart <stop_timeout_seconds> <start_timeout_seconds>" >&2
+    echo "Usage: qemu_restart [--no-kill] <stop_timeout_seconds> <start_timeout_seconds>" >&2
     exit 1
 fi
 
@@ -8,10 +27,13 @@ SCRIPT_DIR="$(dirname "$0")"
 STOP_TIMEOUT=$1
 START_TIMEOUT=$2
 
-echo "Restarting QEMU, PID: $QEMU_PID (stop timeout: ${STOP_TIMEOUT}s, start timeout: ${START_TIMEOUT}s)..."
-
-# Send SIGTERM to QEMU process
-kill -s SIGTERM $QEMU_PID
+if [ "$NO_KILL" = true ]; then
+    echo "Restarting QEMU, PID: $QEMU_PID (no-kill mode, stop timeout: ${STOP_TIMEOUT}s, start timeout: ${START_TIMEOUT}s)..."
+else
+    echo "Restarting QEMU, PID: $QEMU_PID (stop timeout: ${STOP_TIMEOUT}s, start timeout: ${START_TIMEOUT}s)..."
+    # Send SIGTERM to QEMU process
+    kill -s SIGTERM $QEMU_PID
+fi
 
 # Wait for current QEMU process to stop
 if "$SCRIPT_DIR/qemu_wait_for_exit" "$STOP_TIMEOUT"; then
