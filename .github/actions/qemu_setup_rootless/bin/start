@@ -1,6 +1,10 @@
 #!/bin/bash
 # Start QEMU with the configured parameters
 
+set -e
+SCRIPT_DIR="$(dirname -- "$( readlink -f -- "$0"; )")"
+. "$SCRIPT_DIR/.env"
+
 echo "Starting QEMU..."
 
 $QEMU_SYSTEM_NAME \
@@ -15,6 +19,6 @@ $QEMU_SYSTEM_NAME \
   $QEMU_ARGS > qemu.log 2>&1 &
 
 QEMU_PID=$!
-echo "QEMU_PID=$QEMU_PID" >> $GITHUB_ENV
+echo "$QEMU_PID" > "$SCRIPT_DIR/pid"
 
 echo "Started QEMU, PID: $QEMU_PID"

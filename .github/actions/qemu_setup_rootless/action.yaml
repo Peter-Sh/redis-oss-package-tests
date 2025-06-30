@@ -48,12 +48,33 @@ inputs:
     required: false
     default: ""
 
+outputs:
+  qemu_dir:
+    description: "Directory containing QEMU scripts and environment"
+    value: ${{ steps.setup-qemu-dir.outputs.qemu_dir }}
+  qemu_image_snapshot:
+    description: "Path to the image being used by QEMU"
+    value: ${{ steps.create-snapshot.outputs.qemu_image_snapshot }}
+
 runs:
   using: "composite"
   steps:
+    - name: Setup QEMU directory
+      id: setup-qemu-dir
+      shell: bash
+      run: |
+        # Create temporary directory for QEMU scripts and environment
+        QEMU_DIR=$(mktemp -d -t qemu-XXXXXX)
+        echo "qemu_dir=$QEMU_DIR" >> $GITHUB_OUTPUT
+
+        # Copy all QEMU scripts to the temporary directory
+        cp ${{ github.action_path }}/bin/* "$QEMU_DIR/"
+        chmod +x "$QEMU_DIR"/*
+
     - name: Map architecture to package name
       shell: bash
       run: |
+        QEMU_ENV=${{ steps.setup-qemu-dir.outputs.qemu_dir }}/.env
         QEMU_ARCH=${{ inputs.arch }}
         case "$QEMU_ARCH" in
           amd64)
@@ -64,7 +85,6 @@ runs:
             ;;
         esac
 
-        echo "QEMU_ARCH=$QEMU_ARCH" >> $GITHUB_ENV
         QEMU_SYSTEM_NAME="qemu-system-$QEMU_ARCH"
 
         QEMU_CPU="-cpu ${{ inputs.qemu_cpu != '' && inputs.qemu_cpu || 'max' }}"
@@ -105,19 +125,23 @@ runs:
 
         echo "QEMU system name: $QEMU_SYSTEM_NAME"
         echo "QEMU package name: $QEMU_SYSTEM_PACKAGE"
-        echo "QEMU_SYSTEM_NAME=$QEMU_SYSTEM_NAME" >> $GITHUB_ENV
-        echo "QEMU_SYSTEM_PACKAGE=$QEMU_SYSTEM_PACKAGE" >> $GITHUB_ENV
+        echo "QEMU_SYSTEM_NAME=$QEMU_SYSTEM_NAME" >> $QEMU_ENV
+        echo "QEMU_SYSTEM_PACKAGE=$QEMU_SYSTEM_PACKAGE" >> $QEMU_ENV
 
-        echo "QEMU_CPU=$QEMU_CPU" >> $GITHUB_ENV
-        echo "QEMU_BIOS=$QEMU_BIOS" >> $GITHUB_ENV
-        echo "QEMU_MACHINE=$QEMU_MACHINE" >> $GITHUB_ENV
-        echo "QEMU_MEMORY=${{ inputs.memory }}" >> $GITHUB_ENV
-        echo "QEMU_SSH_PORT=${{ inputs.ssh_port }}" >> $GITHUB_ENV
-        echo "QEMU_ARGS=${{ inputs.qemu_args }}" >> $GITHUB_ENV
+        echo "QEMU_ARCH=$QEMU_ARCH" >> $QEMU_ENV
+        echo "QEMU_CPU=$QEMU_CPU" >> $QEMU_ENV
+        echo "QEMU_BIOS=$QEMU_BIOS" >> $QEMU_ENV
+        echo "QEMU_MACHINE=$QEMU_MACHINE" >> $QEMU_ENV
+        echo "QEMU_MEMORY=${{ inputs.memory }}" >> $QEMU_ENV
+        echo "QEMU_SSH_PORT=${{ inputs.ssh_port }}" >> $QEMU_ENV
+        echo "QEMU_ARGS=${{ inputs.qemu_args }}" >> $QEMU_ENV
 
     - name: Install dependencies
       shell: bash
       run: |
+        QEMU_ENV=${{ steps.setup-qemu-dir.outputs.qemu_dir }}/.env
+        source "$QEMU_ENV"
+
         # Check if QEMU binary is already available
         if command -v $QEMU_SYSTEM_NAME >/dev/null 2>&1; then
           echo "$QEMU_SYSTEM_NAME is already installed"
@@ -142,25 +166,37 @@ runs:
     - name: Generate SSH key and password
       shell: bash
       run: |
+        QEMU_DIR=${{ steps.setup-qemu-dir.outputs.qemu_dir }}
+        QEMU_ENV=$QEMU_DIR/.env
+        source "$QEMU_ENV"
+
+
         PASSWD=$(openssl rand -base64 12)
         echo "Generated password: $PASSWD"
-        echo "QEMU_PASSWD=$PASSWD" >> $GITHUB_ENV
-        ssh-keygen -t ecdsa -f /home/ubuntu/qemu_ssh_key -N ""
-        cat /home/ubuntu/qemu_ssh_key.pub >> /home/ubuntu/.ssh/authorized_keys
-        common_ssh_args="-i /home/ubuntu/qemu_ssh_key -o StrictHostKeyChecking=no"
-        QEMU_SSH_ARGS="$common_ssh_args -p ${{ inputs.ssh_port }}"
-        QEMU_SCP_ARGS="$common_ssh_args -P ${{ inputs.ssh_port }}"
-        QEMU_SSH_HOST="qemu@127.0.0.1"
-        echo "QEMU_SSH_ARGS=$QEMU_SSH_ARGS" >> $GITHUB_ENV
-        echo "QEMU_SCP_ARGS=$QEMU_SCP_ARGS" >> $GITHUB_ENV
-        echo "QEMU_SSH_HOST=$QEMU_SSH_HOST" >> $GITHUB_ENV
-        echo "QEMU_SSH=ssh $QEMU_SSH_ARGS $QEMU_SSH_HOST" >> $GITHUB_ENV
-        echo "QEMU_SHELL=${{ github.action_path }}/qemu_shell" >> $GITHUB_ENV
-        echo "QEMU_RESTART=${{ github.action_path }}/qemu_restart" >> $GITHUB_ENV
+        echo "QEMU_PASSWD=$PASSWD" >> $QEMU_ENV
+        ssh-keygen -t ecdsa -f $QEMU_DIR/qemu_ssh_key -N ""
+
+        cat > $QEMU_DIR/ssh_config << EOF
+        Host qemu
+          User qemu
+          HostName 127.0.0.1
+          IdentityFile $QEMU_DIR/qemu_ssh_key
+          Port ${{ inputs.ssh_port }}
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
+          ServerAliveInterval 60
+          ServerAliveCountMax 15
+          ChannelTimeout session=15m
+        EOF
+
+
 
     - name: Create cloud-init config
       shell: bash
       run: |
+        QEMU_ENV=${{ steps.setup-qemu-dir.outputs.qemu_dir }}/.env
+        source "$QEMU_ENV"
+
         mkdir -p cloud-init
         cat <<EOF > cloud-init/user-data
         #cloud-config
@@ -200,7 +236,7 @@ runs:
           fi
 
           BASE_IMAGE="${{ inputs.image }}"
-          SNAPSHOT_IMAGE="${BASE_IMAGE}.snapshot"
+          qemu_image_snapshot="${BASE_IMAGE}.snapshot"
 
           # Determine snapshot size
           if [ -n "${{ inputs.snapshot_size }}" ]; then
@@ -223,25 +259,27 @@ runs:
             fi
           fi
 
-          echo "Creating snapshot: $SNAPSHOT_IMAGE"
+          echo "Creating snapshot: $qemu_image_snapshot"
           echo "Base image: $BASE_IMAGE"
           echo "Snapshot size: $SNAPSHOT_SIZE"
 
-          qemu-img create -f qcow2 -b "$BASE_IMAGE" -F qcow2 "$SNAPSHOT_IMAGE" "$SNAPSHOT_SIZE"
+          qemu-img create -f qcow2 -b "$BASE_IMAGE" -F qcow2 "$qemu_image_snapshot" "$SNAPSHOT_SIZE"
 
           # Store snapshot path for use in subsequent steps
-          echo "QEMU_IMAGE_SNAPSHOT=$SNAPSHOT_IMAGE" >> $GITHUB_ENV
+          echo "qemu_image_snapshot=$qemu_image_snapshot" >> "$GITHUB_OUTPUT"
+          echo "QEMU_IMAGE_SNAPSHOT=$qemu_image_snapshot" >> $QEMU_ENV
         else
           echo "Snapshot creation disabled, using base image directly"
-          echo "QEMU_IMAGE_SNAPSHOT=${{ inputs.image }}" >> $GITHUB_ENV
+          echo "qemu_image_snapshot=$qemu_image_snapshot" >> "$GITHUB_OUTPUT"
+          echo "QEMU_IMAGE_SNAPSHOT=$qemu_image_snapshot" >> $QEMU_ENV
         fi
 
     - name: Start QEMU
       shell: bash
       run: |
-        ${{ github.action_path }}/qemu_start
+        $QEMU_DIR/start
 
     - name: Wait for SSH
       shell: bash
       run: |
-        ${{ github.action_path }}/qemu_wait_for_ssh ${{ inputs.timeout }}
+        $QEMU_DIR/wait_for_ssh ${{ inputs.timeout }}

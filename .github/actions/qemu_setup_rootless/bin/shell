@@ -1,0 +1,5 @@
+#!/bin/bash
+
+SCRIPT_DIR="$(dirname -- "$( readlink -f -- "$0"; )")"
+
+cat $1 | ssh -F "$SCRIPT_DIR/ssh_config" qemu bash -e

@@ -1,2 +1,0 @@
-#!/bin/bash
-cat $1 | ssh $QEMU_SSH_ARGS $QEMU_SSH_HOST bash -e

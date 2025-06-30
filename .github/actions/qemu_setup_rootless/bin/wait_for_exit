@@ -1,6 +1,11 @@
 #!/bin/bash
 # Usage: qemu_wait <timeout_seconds>
 
+# Import environment from .env file
+SCRIPT_DIR="$(dirname -- "$( readlink -f -- "$0"; )")"
+
+
+QEMU_PID=$(cat "$SCRIPT_DIR/pid")
 if [ -z "$QEMU_PID" ]; then
     echo "QEMU_PID is not set" >&2
     exit 1
