@@ -40,10 +40,10 @@ else
 fi
 
 # Wait for current QEMU process to stop
-if "$SCRIPT_DIR/qemu_wait_for_exit" "$STOP_TIMEOUT"; then
+if "$SCRIPT_DIR/wait_for_exit" "$STOP_TIMEOUT"; then
     echo "QEMU stopped, starting new instance..."
-    "$SCRIPT_DIR/qemu_start"
-    if "$SCRIPT_DIR/qemu_wait_for_ssh" "$START_TIMEOUT"; then
+    "$SCRIPT_DIR/start"
+    if "$SCRIPT_DIR/wait_for_ssh" "$START_TIMEOUT"; then
         echo "QEMU restarted"
     else
         echo "QEMU did not start in time"
