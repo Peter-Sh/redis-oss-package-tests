@@ -193,11 +193,12 @@ runs:
     - name: Create cloud-init config
       shell: bash
       run: |
-        QEMU_ENV=${{ steps.setup-qemu-dir.outputs.qemu_dir }}/.env
+        QEMU_DIR=${{ steps.setup-qemu-dir.outputs.qemu_dir }}
+        QEMU_ENV=$QEMU_DIR/.env
         source "$QEMU_ENV"
 
-        mkdir -p cloud-init
-        cat <<EOF > cloud-init/user-data
+        mkdir -p $QEMU_DIR/cloud-init
+        cat <<EOF > $QEMU_DIR/cloud-init/user-data
         #cloud-config
         users:
           - name: qemu
@@ -206,10 +207,10 @@ runs:
             lock_passwd: false
             passwd: $(openssl passwd -6 "$QEMU_PASSWD")
             ssh_authorized_keys:
-              - $(cat /home/ubuntu/qemu_ssh_key.pub)
+              - $(cat $QEMU_DIR/qemu_ssh_key.pub)
         EOF
 
-        cat <<EOF > cloud-init/network-config
+        cat <<EOF > $QEMU_DIR/cloud-init/network-config
         #network-config
         network:
           version: 2
@@ -218,11 +219,11 @@ runs:
               dhcp4: true
         EOF
 
-        cat cloud-init/user-data
-        cat cloud-init/network-config
-        echo "instance-id: qemu-001" > cloud-init/meta-data
-        echo "local-hostname: qemu-vm" >> cloud-init/meta-data
-        genisoimage -output cloud-init.iso -volid cidata -joliet -rock cloud-init
+        cat $QEMU_DIR/cloud-init/user-data
+        cat $QEMU_DIR/cloud-init/network-config
+        echo "instance-id: qemu-001" > $QEMU_DIR/cloud-init/meta-data
+        echo "local-hostname: qemu-vm" >> $QEMU_DIR/cloud-init/meta-data
+        genisoimage -output $QEMU_DIR/cloud-init.iso -volid cidata -joliet -rock $QEMU_DIR/cloud-init
 
     - name: Create snapshot image
       shell: bash
