@@ -228,6 +228,9 @@ runs:
     - name: Create snapshot image
       shell: bash
       run: |
+        QEMU_ENV=${{ steps.setup-qemu-dir.outputs.qemu_dir }}/.env
+        source "$QEMU_ENV"
+
         if [ "${{ inputs.create_snapshot }}" = "true" ]; then
           # Check if qemu-img is available
           if ! command -v qemu-img >/dev/null 2>&1; then
@@ -267,11 +270,11 @@ runs:
 
           # Store snapshot path for use in subsequent steps
           echo "qemu_image_snapshot=$qemu_image_snapshot" >> "$GITHUB_OUTPUT"
-          echo "QEMU_IMAGE_SNAPSHOT=$qemu_image_snapshot" >> $QEMU_ENV
+          echo "QEMU_IMAGE_SNAPSHOT=\"$qemu_image_snapshot\"" >> $QEMU_ENV
         else
           echo "Snapshot creation disabled, using base image directly"
           echo "qemu_image_snapshot=$qemu_image_snapshot" >> "$GITHUB_OUTPUT"
-          echo "QEMU_IMAGE_SNAPSHOT=$qemu_image_snapshot" >> $QEMU_ENV
+          echo "QEMU_IMAGE_SNAPSHOT=\"$qemu_image_snapshot\"" >> $QEMU_ENV
         fi
 
     - name: Start QEMU
