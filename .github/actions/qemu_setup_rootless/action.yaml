@@ -280,9 +280,11 @@ runs:
     - name: Start QEMU
       shell: bash
       run: |
+        QEMU_DIR=${{ steps.setup-qemu-dir.outputs.qemu_dir }}
         $QEMU_DIR/start
 
     - name: Wait for SSH
       shell: bash
       run: |
+        QEMU_DIR=${{ steps.setup-qemu-dir.outputs.qemu_dir }}
         $QEMU_DIR/wait_for_ssh ${{ inputs.timeout }}
