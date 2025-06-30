@@ -123,18 +123,18 @@ runs:
             ;;
         esac
 
-        echo "QEMU system name: $QEMU_SYSTEM_NAME"
-        echo "QEMU package name: $QEMU_SYSTEM_PACKAGE"
-        echo "QEMU_SYSTEM_NAME=$QEMU_SYSTEM_NAME" >> $QEMU_ENV
-        echo "QEMU_SYSTEM_PACKAGE=$QEMU_SYSTEM_PACKAGE" >> $QEMU_ENV
-
-        echo "QEMU_ARCH=$QEMU_ARCH" >> $QEMU_ENV
-        echo "QEMU_CPU=$QEMU_CPU" >> $QEMU_ENV
-        echo "QEMU_BIOS=$QEMU_BIOS" >> $QEMU_ENV
-        echo "QEMU_MACHINE=$QEMU_MACHINE" >> $QEMU_ENV
-        echo "QEMU_MEMORY=${{ inputs.memory }}" >> $QEMU_ENV
-        echo "QEMU_SSH_PORT=${{ inputs.ssh_port }}" >> $QEMU_ENV
-        echo "QEMU_ARGS=${{ inputs.qemu_args }}" >> $QEMU_ENV
+        cat >> $QEMU_ENV << EOF
+        QEMU_SYSTEM_NAME="$QEMU_SYSTEM_NAME"
+        QEMU_SYSTEM_PACKAGE="$QEMU_SYSTEM_PACKAGE"
+        QEMU_ARCH="$QEMU_ARCH"
+        QEMU_CPU="$QEMU_CPU"
+        QEMU_BIOS="$QEMU_BIOS"
+        QEMU_MACHINE="$QEMU_MACHINE"
+        QEMU_MEMORY="${{ inputs.memory }}"
+        QEMU_SSH_PORT="${{ inputs.ssh_port }}"
+        QEMU_ARGS="${{ inputs.qemu_args }}"
+        EOF
+        cat $QEMU_ENV
 
     - name: Install dependencies
       shell: bash
