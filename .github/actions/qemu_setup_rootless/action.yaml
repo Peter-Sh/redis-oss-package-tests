@@ -186,7 +186,6 @@ runs:
           UserKnownHostsFile /dev/null
           ServerAliveInterval 60
           ServerAliveCountMax 15
-          ChannelTimeout session=15m
         EOF
 
 
